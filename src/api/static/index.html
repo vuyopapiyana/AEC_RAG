@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AEC Tender RAG</title>
+    <style>
+        :root {
+            --primary-bg: #0f172a;
+            --secondary-bg: #1e293b;
+            --text-color: #e2e8f0;
+            --accent-color: #38bdf8;
+            --message-user-bg: #3b82f6;
+            --message-bot-bg: #334155;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            background-color: var(--secondary-bg);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { margin: 0; font-size: 1.25rem; }
+        
+        main {
+            flex: 1;
+            display: flex;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            gap: 1rem;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        
+        #chat-container {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--secondary-bg);
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        
+        #messages {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            line-height: 1.5;
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background-color: var(--message-user-bg);
+            color: white;
+            border-bottom-right-radius: 0;
+        }
+        
+        .message.bot {
+            align-self: flex-start;
+            background-color: var(--message-bot-bg);
+            border-bottom-left-radius: 0;
+        }
+        
+        #input-area {
+            padding: 1rem;
+            background-color: #1e293b;
+            border-top: 1px solid #334155;
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 0.75rem;
+            border-radius: 0.25rem;
+            border: 1px solid #475569;
+            background-color: #0f172a;
+            color: white;
+        }
+        
+        button {
+            padding: 0.75rem 1.5rem;
+            background-color: var(--accent-color);
+            color: #0f172a;
+            border: none;
+            border-radius: 0.25rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        button:hover { opacity: 0.9; }
+        
+        #sidebar {
+            flex: 1;
+            background-color: var(--secondary-bg);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .upload-section {
+            border: 1px dashed #475569;
+            padding: 1rem;
+            border-radius: 0.25rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AEC Tender RAG</h1>
+    </header>
+    <main>
+        <div id="sidebar">
+            <h3>Ingestion</h3>
+            <div class="upload-section">
+                <input type="text" id="tender-name" placeholder="Tender Name" style="width: 100%; margin-bottom: 0.5rem; box-sizing: border-box;">
+                <input type="file" id="file-upload" />
+                <button onclick="uploadFile()" style="margin-top: 0.5rem; width: 100%;">Ingest Document</button>
+            </div>
+            <div id="status-msg"></div>
+        </div>
+        <div id="chat-container">
+            <div id="messages">
+                <div class="message bot">Hello! I'm your Tender Assistant. Query me about ingested documents.</div>
+            </div>
+            <div id="input-area">
+                <input type="text" id="query-input" placeholder="Ask a question..." onkeypress="handleKeyPress(event)">
+                <button onclick="sendQuery()">Send</button>
+            </div>
+        </div>
+    </main>
+    <script>
+        async function uploadFile() {
+            const fileInput = document.getElementById('file-upload');
+            const tenderName = document.getElementById('tender-name').value;
+            const statusDiv = document.getElementById('status-msg');
+            
+            if (!fileInput.files[0] || !tenderName) {
+                statusDiv.innerText = "Please select a file and enter a tender name.";
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            statusDiv.innerText = "Uploading...";
+            
+            try {
+                const response = await fetch(`/ingest?tender_name=${encodeURIComponent(tenderName)}`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                statusDiv.innerText = data.message;
+            } catch (e) {
+                statusDiv.innerText = "Error: " + e;
+            }
+        }
+
+        async function sendQuery() {
+            const input = document.getElementById('query-input');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            addMessage(message, 'user');
+            input.value = '';
+            
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: message})
+                });
+                const data = await response.json();
+                addMessage(data.response, 'bot');
+            } catch (e) {
+                addMessage("Error communicating with server.", 'bot');
+            }
+        }
+        
+        function addMessage(text, sender) {
+            const msgs = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            // Simple markdown rendering replacement for newlines
+            div.innerHTML = text.replace(/\n/g, '<br>'); 
+            msgs.appendChild(div);
+            msgs.scrollTop = msgs.scrollHeight;
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendQuery();
+        }
+    </script>
+</body>
+</html>
