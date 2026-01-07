@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +14,7 @@
             --message-user-bg: #3b82f6;
             --message-bot-bg: #334155;
         }
+
         body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background-color: var(--primary-bg);
@@ -22,6 +24,7 @@
             flex-direction: column;
             height: 100vh;
         }
+
         header {
             background-color: var(--secondary-bg);
             padding: 1rem 2rem;
@@ -30,8 +33,12 @@
             justify-content: space-between;
             align-items: center;
         }
-        h1 { margin: 0; font-size: 1.25rem; }
-        
+
+        h1 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+
         main {
             flex: 1;
             display: flex;
@@ -42,7 +49,7 @@
             padding: 1rem;
             box-sizing: border-box;
         }
-        
+
         #chat-container {
             flex: 2;
             display: flex;
@@ -51,7 +58,7 @@
             border-radius: 0.5rem;
             overflow: hidden;
         }
-        
+
         #messages {
             flex: 1;
             padding: 1rem;
@@ -60,27 +67,27 @@
             flex-direction: column;
             gap: 1rem;
         }
-        
+
         .message {
             max-width: 80%;
             padding: 0.75rem 1rem;
             border-radius: 0.5rem;
             line-height: 1.5;
         }
-        
+
         .message.user {
             align-self: flex-end;
             background-color: var(--message-user-bg);
             color: white;
             border-bottom-right-radius: 0;
         }
-        
+
         .message.bot {
             align-self: flex-start;
             background-color: var(--message-bot-bg);
             border-bottom-left-radius: 0;
         }
-        
+
         #input-area {
             padding: 1rem;
             background-color: #1e293b;
@@ -88,7 +95,7 @@
             display: flex;
             gap: 0.5rem;
         }
-        
+
         input[type="text"] {
             flex: 1;
             padding: 0.75rem;
@@ -97,7 +104,7 @@
             background-color: #0f172a;
             color: white;
         }
-        
+
         button {
             padding: 0.75rem 1.5rem;
             background-color: var(--accent-color);
@@ -108,9 +115,11 @@
             cursor: pointer;
             transition: opacity 0.2s;
         }
-        
-        button:hover { opacity: 0.9; }
-        
+
+        button:hover {
+            opacity: 0.9;
+        }
+
         #sidebar {
             flex: 1;
             background-color: var(--secondary-bg);
@@ -129,6 +138,7 @@
         }
     </style>
 </head>
+
 <body>
     <header>
         <h1>AEC Tender RAG</h1>
@@ -137,7 +147,8 @@
         <div id="sidebar">
             <h3>Ingestion</h3>
             <div class="upload-section">
-                <input type="text" id="tender-name" placeholder="Tender Name" style="width: 100%; margin-bottom: 0.5rem; box-sizing: border-box;">
+                <input type="text" id="tender-name" placeholder="Tender Name"
+                    style="width: 100%; margin-bottom: 0.5rem; box-sizing: border-box;">
                 <input type="file" id="file-upload" />
                 <button onclick="uploadFile()" style="margin-top: 0.5rem; width: 100%;">Ingest Document</button>
             </div>
@@ -158,17 +169,17 @@
             const fileInput = document.getElementById('file-upload');
             const tenderName = document.getElementById('tender-name').value;
             const statusDiv = document.getElementById('status-msg');
-            
+
             if (!fileInput.files[0] || !tenderName) {
                 statusDiv.innerText = "Please select a file and enter a tender name.";
                 return;
             }
-            
+
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
-            
+
             statusDiv.innerText = "Uploading...";
-            
+
             try {
                 const response = await fetch(`/ingest?tender_name=${encodeURIComponent(tenderName)}`, {
                     method: 'POST',
@@ -183,31 +194,41 @@
 
         async function sendQuery() {
             const input = document.getElementById('query-input');
+            const tenderNameInput = document.getElementById('tender-name');
             const message = input.value.trim();
+            const tenderId = tenderNameInput.value || "default_tender"; // Use entered tender name as ID for MVP
+
             if (!message) return;
-            
+
             addMessage(message, 'user');
             input.value = '';
-            
+
             try {
                 const response = await fetch('/query', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: message})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        tender_id: tenderId // Send tender ID
+                    })
                 });
                 const data = await response.json();
-                addMessage(data.response, 'bot');
+
+                // Display metadata + answer
+                const metaInfo = `<small style="display:block; margin-bottom:0.5rem; opacity:0.7;">[${data.classification} | ${data.strategy}]</small>`;
+                addMessage(metaInfo + data.response, 'bot');
+
             } catch (e) {
-                addMessage("Error communicating with server.", 'bot');
+                addMessage("Error communicating with server: " + e, 'bot');
             }
         }
-        
+
         function addMessage(text, sender) {
             const msgs = document.getElementById('messages');
             const div = document.createElement('div');
             div.className = `message ${sender}`;
             // Simple markdown rendering replacement for newlines
-            div.innerHTML = text.replace(/\n/g, '<br>'); 
+            div.innerHTML = text.replace(/\n/g, '<br>');
             msgs.appendChild(div);
             msgs.scrollTop = msgs.scrollHeight;
         }
@@ -217,4 +238,5 @@
         }
     </script>
 </body>
+
 </html>
