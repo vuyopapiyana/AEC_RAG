@@ -8,7 +8,6 @@ from src.agent.agent import agent
 from src.db.models import Clause
 
 # --- Enums & Models ---
-
 class QueryClassification(str, Enum):
     EXACT = "EXACT"
     SEMANTIC = "SEMANTIC"
@@ -38,6 +37,8 @@ class ControllerResponse(BaseModel):
     strategy: str
     status: str
 
+mock_log_count = 0
+
 # --- Controller Implementation ---
 
 class QueryController:
@@ -48,7 +49,7 @@ class QueryController:
 
     def _validate_preconditions(self, tender_id: str, query: str) -> bool:
         """
-        Hard gates:
+        Checks:
         - tender_id must be provided
         - query must be non-empty
         """
@@ -56,10 +57,10 @@ class QueryController:
             return False
         if not query or not query.strip():
             return False
-        # In a real app, check if tender exists in DB here
+        # In a production app, this will check if tender exists in DB
         return True
 
-    def _classify_query(self, query: str) -> QueryClassification:
+    def _classify_query(self, query: str) -> QueryClassification: # TODO: Implement classification with strategy selection
         """
         Deterministic classification based on regex patterns.
         """
@@ -71,7 +72,7 @@ class QueryController:
             # If it looks like a specific clause reference, treat as EXACT (or HYBRID if complex)
             # For strict determinism, let's say purely numeric references are EXACT.
             # "Clause 5.1" -> EXACT
-            # "What does Clause 5.1 say about X" -> HYBRID? 
+            # "What does Clause 5.1 say about X" -> HYBRID
             # For MVP simplicity: Presence of clause ref -> EXACT (prioritize lookup)
             return QueryClassification.EXACT
         
@@ -89,13 +90,14 @@ class QueryController:
         else:
             return RetrievalStrategy.HYBRID
 
-    def _create_log_record(self, ctx: QueryContext):
+    def _create_log_record(self, ctx: QueryContext): # TODO: Implement logging
         """
-        Mock logging function. In production, write to DB/CloudWatch.
+        Mock logging function but will write to a db in production
         """
-        print(f"[AUDIT LOG] ID={ctx.query_id} TENDER={ctx.tender_id} TYPE={ctx.classification} STRAT={ctx.strategy} QUERY='{ctx.raw_query}'")
+        mock_log_count += 1
+        print(f"[AUDIT LOG] LOG Count: {mock_log_count}.) ID={ctx.query_id} TENDER={ctx.tender_id} TYPE={ctx.classification} STRAT={ctx.strategy} QUERY='{ctx.raw_query}'")
 
-    def _validate_response(self, response: str, ctx: QueryContext):
+    def _validate_response(self, response: str, ctx: QueryContext): # TODO: Implement validation as in references
         """
         Post-agent validation.
         Check for citations if answer is factual.
@@ -106,8 +108,8 @@ class QueryController:
         pass
 
     async def execute(self, tender_id: str, query: str, interface: str = "API") -> ControllerResponse:
-        # 1. Validate
-        if not self._validate_preconditions(tender_id, query):
+        # 1. Validate query preconditions
+        if not self._validate_preconditions(tender_id, query): 
             return ControllerResponse(
                 query_id="N/A",
                 answer="Invalid Request: Missing tender_id or empty query.",
@@ -118,9 +120,9 @@ class QueryController:
 
         # 2. Context & Classification
         ctx = QueryContext(
-            tender_id=tender_id,
-            raw_query=query,
-            interface_source=interface
+            tender_id = tender_id,
+            raw_query = query,
+            interface_source = interface
         )
         ctx.classification = self._classify_query(query)
         ctx.strategy = self._select_strategy(ctx.classification)
@@ -132,27 +134,27 @@ class QueryController:
         # Agent implementation needs to handle explicit strategy strategies
         try:
             answer = await agent.ask_with_strategy(
-                query=query, 
-                tender_id=tender_id, 
-                strategy=ctx.strategy.value
+                query = query, 
+                tender_id = tender_id, 
+                strategy = ctx.strategy.value
             )
             ctx.agent_response = answer
             ctx.log_status = "ANSWERED"
+
         except Exception as e:
             ctx.refusal_reason = str(e)
             ctx.log_status = "ERROR"
             ctx.agent_response = "I encountered an error processing your request."
             print(f"[ERROR] {e}")
 
-        # 5. Finalize
-        # self._validate_response(ctx.agent_response, ctx) # (Optional strict check)
+        # 5. Finalize and give the response
         
         return ControllerResponse(
-            query_id=ctx.query_id,
-            answer=ctx.agent_response,
-            classification=ctx.classification.value,
-            strategy=ctx.strategy.value,
-            status=ctx.log_status
+            query_id = ctx.query_id,
+            answer = ctx.agent_response,
+            classification = ctx.classification.value,
+            strategy = ctx.strategy.value,
+            status = ctx.log_status
         )
 
 # Global instance

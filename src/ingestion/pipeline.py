@@ -1,63 +1,75 @@
 from pathlib import Path
 from uuid import uuid4
 import asyncio
+import json
 from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.database import get_session
 from src.db.models import Tender, Document, Clause, Chunk
 from src.ingestion.parser import DocumentParser
+from src.ingestion.chunker import ClauseChunker, DocumentChunk
 from src.ingestion.embed import get_embedding
 from src.db.graph_db import graph_db
 
 class IngestionPipeline:
     def __init__(self):
         self.parser = DocumentParser()
+        self.chunker = ClauseChunker()
 
     async def ingest_file(self, file_path: Path, tender_id: uuid4):
         session_gen = get_session()
         session: AsyncSession = await anext(session_gen)
         
         try:
-            # 1. Parse Document
+            # 1. Parse Document (Get raw content)
             parsed_data = self.parser.parse(file_path)
+            content = parsed_data["content"]
+            metadata = parsed_data["metadata"]
             
             # 2. Create Document Record
             doc = Document(
-                filename=parsed_data["metadata"]["filename"],
+                filename=metadata["filename"],
                 tender_id=tender_id
             )
             session.add(doc)
             await session.commit()
             await session.refresh(doc)
             
-            # 3. Extract and Process Clauses
-            clauses_data = self.parser.chunk_clauses(parsed_data["content"])
+            # 3. Chunk Content (Using new Chunker)
+            # Add doc_id to metadata for convenient tracking if needed
+            doc_metadata = metadata.copy()
+            doc_metadata["document_id"] = str(doc.id)
             
-            for c_data in clauses_data:
-                # Create Clause
+            chunks: List[DocumentChunk] = self.chunker.chunk_document(content, doc_metadata)
+            
+            print(f"Generated {len(chunks)} chunks for {file_path.name}")
+
+            for chunk_obj in chunks:
+                # Create Clause (One chunk = One clause for this MVP)
+                clause_number = chunk_obj.metadata.get("clause_number", f"GEN-{chunk_obj.index}")
+                
                 clause = Clause(
                     document_id=doc.id,
-                    clause_number=c_data["clause_number"],
-                    content=c_data["content"],
-                    title=c_data.get("title") # Parser might not extract this yet
+                    clause_number=clause_number,
+                    content=chunk_obj.content,
+                    title=f"Clause {clause_number}" 
                 )
                 session.add(clause)
                 await session.commit()
                 await session.refresh(clause)
                 
                 # Create Chunk & Embed
-                # For this simple pipeline, 1 clause = 1 chunk for now, 
-                # but we can sub-chunk if needed.
-                embedding = await get_embedding(c_data["content"])
+                embedding = await get_embedding(chunk_obj.content)
                 
-                chunk = Chunk(
+                db_chunk = Chunk(
                     clause_id=clause.id,
-                    content=c_data["content"],
-                    chunk_index=c_data["chunk_index"],
+                    content=chunk_obj.content,
+                    chunk_index=chunk_obj.index,
                     embedding=embedding
+                    # metadata=json.dumps(chunk_obj.metadata) # If we add metadata column to Chunk table later
                 )
-                session.add(chunk)
+                session.add(db_chunk)
                 
                 # 4. Neo4j Ingestion (Basic)
                 self.ingest_graph(clause)

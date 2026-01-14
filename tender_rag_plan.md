@@ -57,6 +57,23 @@ Key design choice: **The LLM never retrieves data directly**. All retrieval is t
 
 ---
 
+## 3.2 Reference Architecture (Example Alignment)
+
+We will align with the design patterns found in the `example/` directory to ensure consistency and robustness.
+
+**Key Principles to Adopt:**
+1.  **Modular Agent Structure**:
+    - `agent.py`: Pure agent definition and dependency injection.
+    - `tools.py`: Search and retrieval logic wrapped in PydanticAI tools with strict input models.
+    - `prompts.py`: Centralized system prompts.
+    - `providers.py` or similar abstraction for LLM configuration.
+2.  **Schema-First Tools**:
+    - Use Pydantic models for all tool inputs (e.g., `ClauseLookupInput`, `TenderSearchInput`) to ensure strict validation before execution.
+    - Return structured data (List[Dict]) from tools rather than pre-formatted strings, allowing the Agent to handle the final presentation or citation formatting.
+3.  **Dependency Injection**:
+    - Utilize `AgentDependencies` dataclass to pass `SearchEngine`, `TenderID`, and strategies into the `RunContext`.
+
+
 ## 4. Detailed Implementation Plan
 
 ### Phase 0 – Foundations

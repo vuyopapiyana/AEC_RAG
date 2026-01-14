@@ -16,11 +16,9 @@ app.mount("/static", StaticFiles(directory="src/api/static"), name="static")
 
 from src.api.controller import controller
 
-# ... imports ...
-
 class QueryRequest(BaseModel):
     message: str
-    tender_id: str = "default_tender" # For now default, but really required
+    tender_id: str = "default_tender"
     interface: str = "API"
 
 class QueryResponse(BaseModel):
@@ -30,39 +28,48 @@ class QueryResponse(BaseModel):
     strategy: str
     status: str
 
-# ... startup and ingest ...
+@app.on_event("startup")
+async def on_startup():
+    await init_db()
+
+# ... (ingest remains)
+
+@app.get("/")
+async def root():
+    return HTMLResponse(open("src/api/static/index.html").read())
+
+@app.post("/ingest")
+async def ingest_document(tender_name: str, file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+    # Save uploaded file
+    upload_dir = Path("uploads")
+    upload_dir.mkdir(exist_ok=True)
+    file_path = upload_dir / file.filename
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    background_tasks.add_task(run_ingestion, str(file_path), tender_name)
+    
+    return {"message": f"Ingestion started for {file.filename} under tender {tender_name}"}
 
 @app.post("/query", response_model=QueryResponse)
-async def query_agent(request: QueryRequest):
+async def query_agent(full_query_request: QueryRequest):
     try:
         # Use controller instead of direct agent call
         result = await controller.execute(
-            tender_id=request.tender_id,
-            query=request.message,
-            interface=request.interface
+            tender_id = full_query_request.tender_id,
+            query = full_query_request.message,
+            interface = full_query_request.interface
         )
-        
-        if result.status == "REFUSED":
-            # Just return the refusal as a valid response but with refusal info
-             return QueryResponse(
-                response=result.answer,
-                query_id=result.query_id,
-                classification=result.classification,
-                strategy=result.strategy,
-                status=result.status
-            )
-        
+    
         return QueryResponse(
-            response=result.answer,
-            query_id=result.query_id,
-            classification=result.classification,
-            strategy=result.strategy,
-            status=result.status
+            response = result.answer,
+            query_id = result.query_id,
+            classification = result.classification,
+            strategy = result.strategy,
+            status = result.status
         )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/")
-async def root():
-    return {"message": "AEC Tender RAG API is running"}

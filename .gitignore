@@ -5,9 +5,10 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache
 
 # Python files
-db/
+example/
 
 # Virtual environments
 .venv
@@ -17,3 +18,4 @@ Bids to test
 *.pdf
 *.bin
 *.pkl
+.vscode
