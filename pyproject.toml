@@ -20,5 +20,5 @@ dependencies = [
     "torch",
     "torchvision",
     "docling",
-    "numpy<2",
+    "numpy==1.26.4",
 ]
